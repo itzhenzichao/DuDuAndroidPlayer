@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Android Studio / SDK (本地路径，不入库)
+local.properties
+
+# Kotlin
+.kotlin/
+
+# macOS
+.DS_Store
+
+# 日志与临时文件
+*.log
+captures/
+.externalNativeBuild/
+.cxx/
