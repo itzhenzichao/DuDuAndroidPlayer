@@ -2,10 +2,8 @@ package com.zzc.tripleplayer.ui
 
 import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -179,9 +177,6 @@ fun VideoTile(
                     onTap = { if (tile.hasVideo) onTapTile() }
                 )
             }
-            .border(
-                BorderStroke(2.dp, Color(0xFF333333))
-            )
     ) {
         // TextureView 布局尺寸固定为视频比例的基准大小（最长边 720），此后不再变化；
         // 等比适配容器、校准放大全部走 graphicsLayer 变换，布局尺寸恒定避免表面与内容错位。
