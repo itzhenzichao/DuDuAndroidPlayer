@@ -1,6 +1,8 @@
 package com.zzc.tripleplayer.ui
 
 import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.MediaStore
 import android.provider.MediaStore.Video.Thumbnails
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -81,9 +83,7 @@ fun FolderListScreen(
     onOpenFolder: (String) -> Unit
 ) {
     val folders = remember(videos) {
-        videos.groupBy { it.folder }.map { (path, items) ->
-            path.substringAfterLast('/') to items
-        }
+        videos.groupBy { it.folder }.toList()
     }
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         TopBar("视频文件夹", showBack = false, multiMode, onToggleMulti, onBack = {})
@@ -99,7 +99,9 @@ fun FolderListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(folders, key = { it.first }) { (name, items) ->
+                // key 用完整路径：不同层级文件夹的尾段可能同名
+                items(folders, key = { it.first }) { (path, items) ->
+                    val name = path.substringAfterLast('/')
                     Column(
                         Modifier
                             .clip(RoundedCornerShape(6.dp))
@@ -224,11 +226,57 @@ private fun formatDuration(ms: Long): String {
     return "%d:%02d".format(s / 60, s % 60)
 }
 
-// 播放页内部选片弹层：与首页同构的两级结构（文件夹 → 视频网格），点视频回填到指定格子
+fun formatDurationPublic(ms: Long): String = formatDuration(ms)
+
+// 选片弹层的数据项：视频带时长 label，图片 label 为空
+data class PickItem(
+    val id: Long,
+    val uri: Uri,
+    val label: String,
+    val folder: String
+)
+
 @Composable
-fun VideoPickerScreen(
-    videos: List<VideoItem>,
-    onPick: (VideoItem) -> Unit,
+private fun MediaThumb(id: Long, isImage: Boolean, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var bmp by remember(id, isImage) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(id, isImage) {
+        bmp = withContext(Dispatchers.IO) {
+            try {
+                if (isImage) {
+                    MediaStore.Images.Thumbnails.getThumbnail(
+                        context.contentResolver, id, MediaStore.Images.Thumbnails.MINI_KIND, null
+                    )
+                } else {
+                    Thumbnails.getThumbnail(
+                        context.contentResolver, id, Thumbnails.MINI_KIND, null
+                    )
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+    val b = bmp
+    if (b != null) {
+        Image(
+            bitmap = b.asImageBitmap(),
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Box(modifier)
+    }
+}
+
+// 播放页内部选片弹层：两级结构（文件夹 → 媒体网格），点媒体回填到指定格子
+@Composable
+fun MediaPickerScreen(
+    items: List<PickItem>,
+    title: String,
+    isImage: Boolean,
+    onPick: (Uri) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -254,7 +302,7 @@ fun VideoPickerScreen(
                         .clickable { viewingFolder = null }
                 )
             }
-            Text("选择视频", color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Text(title, color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
             Text(
                 "✕",
                 color = Color.White,
@@ -264,10 +312,8 @@ fun VideoPickerScreen(
         }
         val f = viewingFolder
         if (f == null) {
-            val folders = remember(videos) {
-                videos.groupBy { it.folder }.map { (path, items) ->
-                    path.substringAfterLast('/') to items
-                }
+            val folders = remember(items) {
+                items.groupBy { it.folder }.toList()
             }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(6),
@@ -275,12 +321,14 @@ fun VideoPickerScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(folders, key = { it.first }) { (name, items) ->
+                // key 用完整路径：不同层级文件夹的尾段可能同名
+                items(folders, key = { it.first }) { (path, its) ->
+                    val name = path.substringAfterLast('/')
                     Column(
                         Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(Color(0xFF161616))
-                            .clickable { viewingFolder = items.first().folder }
+                            .clickable { viewingFolder = its.first().folder }
                     ) {
                         Box(
                             Modifier
@@ -288,9 +336,9 @@ fun VideoPickerScreen(
                                 .aspectRatio(16f / 9f)
                                 .background(Color(0xFF222222))
                         ) {
-                            VideoThumb(items.first().id, Modifier.fillMaxSize())
+                            MediaThumb(its.first().id, isImage, Modifier.fillMaxSize())
                             Text(
-                                "${items.size} 个视频",
+                                "${its.size} 个",
                                 fontSize = 9.sp,
                                 color = Color.White,
                                 modifier = Modifier
@@ -310,18 +358,18 @@ fun VideoPickerScreen(
                 }
             }
         } else {
-            val folderVideos = videos.filter { it.folder == f }
+            val folderItems = items.filter { it.folder == f }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(6),
                 contentPadding = PaddingValues(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(folderVideos, key = { it.id }) { v ->
+                items(folderItems, key = { it.id }) { v ->
                     Column(
                         Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .clickable { onPick(v) }
+                            .clickable { onPick(v.uri) }
                     ) {
                         Box(
                             Modifier
@@ -329,24 +377,19 @@ fun VideoPickerScreen(
                                 .aspectRatio(16f / 9f)
                                 .background(Color(0xFF222222))
                         ) {
-                            VideoThumb(v.id, Modifier.fillMaxSize())
-                            Text(
-                                formatDuration(v.durationMs),
-                                fontSize = 9.sp,
-                                color = Color.White,
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .background(Color(0x88000000))
-                                    .padding(horizontal = 3.dp, vertical = 1.dp)
-                            )
+                            MediaThumb(v.id, isImage, Modifier.fillMaxSize())
+                            if (v.label.isNotEmpty()) {
+                                Text(
+                                    v.label,
+                                    fontSize = 9.sp,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .background(Color(0x88000000))
+                                        .padding(horizontal = 3.dp, vertical = 1.dp)
+                                )
+                            }
                         }
-                        Text(
-                            v.name,
-                            fontSize = 9.sp,
-                            color = Color.White,
-                            maxLines = 1,
-                            modifier = Modifier.padding(top = 3.dp)
-                        )
                     }
                 }
             }

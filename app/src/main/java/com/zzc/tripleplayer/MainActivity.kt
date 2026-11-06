@@ -30,31 +30,41 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.zIndex
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.zzc.tripleplayer.data.CalibrationStore
+import com.zzc.tripleplayer.model.TileType
 import com.zzc.tripleplayer.model.TileUiState
 import com.zzc.tripleplayer.model.VideoItem
 import com.zzc.tripleplayer.ui.FolderListScreen
 import com.zzc.tripleplayer.ui.FolderVideoListScreen
-import com.zzc.tripleplayer.ui.VideoPickerScreen
+import com.zzc.tripleplayer.ui.MediaPickerScreen
+import com.zzc.tripleplayer.ui.PickItem
 import com.zzc.tripleplayer.ui.VideoTile
+import com.zzc.tripleplayer.ui.formatDurationPublic
 
 class MainActivity : ComponentActivity() {
     private val tiles = mutableListOf<TileUiState>()
     private val players = mutableListOf<ExoPlayer>()
     private val videoList = mutableStateOf<List<VideoItem>>(emptyList())
+    private val imageList = mutableStateOf<List<PickItem>>(emptyList())
 
     private val permLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) loadVideoList() }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        if (grants.values.any { it }) {
+            loadVideoList()
+            loadImageList()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CalibrationStore.init(this)
-        requestVideoListPermission()
+        requestMediaPermissions()
         hideSystemBars()
         setContent { TriplePlayerApp() }
     }
@@ -76,11 +86,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestVideoListPermission() {
-        val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO
-        else Manifest.permission.READ_EXTERNAL_STORAGE
-        if (checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED) loadVideoList()
-        else permLauncher.launch(perm)
+    private fun requestMediaPermissions() {
+        val perms = if (Build.VERSION.SDK_INT >= 33)
+            arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_IMAGES)
+        else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        val missing = perms.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            loadVideoList()
+            loadImageList()
+        } else {
+            permLauncher.launch(missing.toTypedArray())
+        }
     }
 
     private fun loadVideoList() {
@@ -116,6 +134,37 @@ class MainActivity : ComponentActivity() {
         videoList.value = result
     }
 
+    private fun loadImageList() {
+        val proj = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DATA
+        )
+        val result = mutableListOf<PickItem>()
+        contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            proj, null, null,
+            "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
+        )?.use { c ->
+            val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            val dataCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+            while (c.moveToNext()) {
+                val id = c.getLong(idCol)
+                val path = c.getString(dataCol) ?: ""
+                result.add(
+                    PickItem(
+                        id = id,
+                        uri = ContentUris.withAppendedId(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id
+                        ),
+                        label = "",
+                        folder = path.substringBeforeLast('/')
+                    )
+                )
+            }
+        }
+        imageList.value = result
+    }
+
     // SAF document uri（.../video:123）与 MediaStore uri（.../media/123）尾部数字即 mediaId
     private fun mediaIdOf(uriStr: String): Long? =
         Regex("(\\d+)$").find(uriStr)?.groupValues?.get(1)?.toLongOrNull()
@@ -129,14 +178,16 @@ class MainActivity : ComponentActivity() {
         var pendingVideo by remember { mutableStateOf<VideoItem?>(null) }
         // null = 文件夹列表页；非 null = 正在浏览该文件夹的视频列表
         var viewingFolder by remember { mutableStateOf<String?>(null) }
-        // >= 0 = 正在给该格子选视频（内部选片弹层）
+        // >= 0 = 正在给该格子选媒体（内部选片弹层）
         var pickingTile by remember { mutableStateOf(-1) }
+        var pickingImage by remember { mutableStateOf(false) }
 
-        fun loadTile(i: Int, uri: Uri) {
+        fun loadTile(i: Int, uri: Uri, type: TileType = TileType.VIDEO) {
             val t = tiles[i]
             val p = players[i]
             t.reset()
             t.uri = uri.toString()
+            t.type = type
             t.hasVideo = true
             t.showControls = true
             // 重选同一文件时复原校准（含音量）
@@ -147,10 +198,14 @@ class MainActivity : ComponentActivity() {
                 t.ty = s.ty
                 t.volume = s.volume
             }
-            p.setMediaItem(MediaItem.fromUri(uri))
-            p.volume = t.volume
-            p.prepare()
-            p.playWhenReady = false
+            if (type == TileType.VIDEO) {
+                p.setMediaItem(MediaItem.fromUri(uri))
+                p.volume = t.volume
+                p.prepare()
+                p.playWhenReady = false
+            } else {
+                t.decodeSeq++
+            }
         }
 
         fun reload(i: Int) {
@@ -159,6 +214,10 @@ class MainActivity : ComponentActivity() {
             if (!t.hasVideo) {
                 p.stop()
                 p.clearMediaItems()
+                return
+            }
+            if (t.type == TileType.IMAGE) {
+                // 图片位图随 TileSnap 迁移，无需重建
                 return
             }
             p.setMediaItem(MediaItem.fromUri(Uri.parse(t.uri)))
@@ -251,8 +310,9 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = inPlayer) { exitPlayer() }
         BackHandler(enabled = !inPlayer && viewingFolder != null) { viewingFolder = null }
 
-        fun pickAndLoad(i: Int) {
+        fun pickAndLoad(i: Int, isImage: Boolean) {
             pickingTile = i
+            pickingImage = isImage
         }
 
         if (inPlayer) {
@@ -265,7 +325,8 @@ class MainActivity : ComponentActivity() {
                         tile = t,
                         player = players[i],
                         showMoveBar = tileCount > 1,
-                        onPickVideo = { pickAndLoad(i) },
+                        onPickVideo = { pickAndLoad(i, false) },
+                        onPickImage = { pickAndLoad(i, true) },
                         onTapTile = { onTileTapped(i) },
                         onMove = { dir -> onMove(i, dir) },
                         onSwitchVideo = { dir -> onSwitchVideo(i, dir) },
@@ -279,16 +340,33 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (pickingTile >= 0) {
-                    VideoPickerScreen(
-                        videos = videoList.value,
-                        onPick = { v ->
-                            loadTile(pickingTile, v.uri)
-                            pickingTile = -1
-                        },
-                        onDismiss = { pickingTile = -1 },
-                        modifier = Modifier
-                            .zIndex(2f)
-                    )
+                    if (pickingImage) {
+                        MediaPickerScreen(
+                            items = imageList.value,
+                            title = "选择图片",
+                            isImage = true,
+                            onPick = { uri ->
+                                loadTile(pickingTile, uri, TileType.IMAGE)
+                                pickingTile = -1
+                            },
+                            onDismiss = { pickingTile = -1 },
+                            modifier = Modifier.zIndex(2f)
+                        )
+                    } else {
+                        MediaPickerScreen(
+                            items = videoList.value.map {
+                                PickItem(it.id, it.uri, formatDurationPublic(it.durationMs), it.folder)
+                            },
+                            title = "选择视频",
+                            isImage = false,
+                            onPick = { uri ->
+                                loadTile(pickingTile, uri)
+                                pickingTile = -1
+                            },
+                            onDismiss = { pickingTile = -1 },
+                            modifier = Modifier.zIndex(2f)
+                        )
+                    }
                 }
             }
         } else {
@@ -342,9 +420,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// 换位时的格子状态快照（进度与播放状态不迁移，重新加载后从头暂停）
+// 换位时的格子状态快照（视频进度与播放状态不迁移，重新加载后从头暂停）
 private class TileSnap(
     val uri: String,
+    val type: TileType,
     val volume: Float,
     val rotation: Float,
     val scale: Float,
@@ -352,14 +431,17 @@ private class TileSnap(
     val ty: Float,
     val videoW: Int,
     val videoH: Int,
-    val durationMs: Long
+    val durationMs: Long,
+    val imageBitmap: ImageBitmap?
 ) {
     constructor(t: TileUiState) : this(
-        t.uri, t.volume, t.rotation, t.scale, t.tx, t.ty, t.videoW, t.videoH, t.durationMs
+        t.uri, t.type, t.volume, t.rotation, t.scale, t.tx, t.ty,
+        t.videoW, t.videoH, t.durationMs, t.imageBitmap
     )
 
     fun restoreTo(t: TileUiState) {
         t.uri = uri
+        t.type = type
         t.hasVideo = uri.isNotEmpty()
         t.volume = volume
         t.rotation = rotation
@@ -369,6 +451,8 @@ private class TileSnap(
         t.videoW = videoW
         t.videoH = videoH
         t.durationMs = durationMs
+        t.imageBitmap = imageBitmap
+        t.decodeSeq++
         t.positionMs = 0
         t.playing = false
         t.showControls = false

@@ -1,6 +1,9 @@
 package com.zzc.tripleplayer.ui
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,18 +38,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import com.zzc.tripleplayer.model.TileType
 import com.zzc.tripleplayer.model.TileUiState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private const val BASE_MAX_EDGE = 720f
+private const val IMAGE_MAX_EDGE = 1440
 
 @Composable
 fun VideoTile(
@@ -53,6 +65,7 @@ fun VideoTile(
     player: ExoPlayer,
     showMoveBar: Boolean,
     onPickVideo: () -> Unit,
+    onPickImage: () -> Unit,
     onTapTile: () -> Unit,
     onMove: (Int) -> Unit,
     onSwitchVideo: (Int) -> Unit,
@@ -94,14 +107,53 @@ fun VideoTile(
         }
     }
 
-    LaunchedEffect(tile.hasVideo) {
-        while (tile.hasVideo) {
+    LaunchedEffect(tile.hasVideo, tile.type) {
+        while (tile.hasVideo && tile.type == TileType.VIDEO) {
             runCatching {
                 tile.positionMs = player.currentPosition
                 tile.durationMs = player.duration.coerceAtLeast(0L)
                 tile.playing = player.isPlaying
             }
             delay(300)
+        }
+    }
+
+    // 图片格子：按 uri 解码（限制最大边长防爆内存），尺寸回写后走同一套 fitFactor 变换
+    if (tile.type == TileType.IMAGE) {
+        val context = LocalContext.current
+        LaunchedEffect(tile.uri, tile.decodeSeq) {
+            if (tile.uri.isEmpty()) return@LaunchedEffect
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val cr = context.contentResolver
+                    val uri = Uri.parse(tile.uri)
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    cr.openInputStream(uri)?.use {
+                        BitmapFactory.decodeStream(it, null, bounds)
+                    }
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+                    tile.videoW = bounds.outWidth
+                    tile.videoH = bounds.outHeight
+                    var sample = 1
+                    var maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
+                    while (maxEdge / 2 >= IMAGE_MAX_EDGE) {
+                        sample *= 2
+                        maxEdge /= 2
+                    }
+                    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                    cr.openInputStream(uri)?.use {
+                        BitmapFactory.decodeStream(it, null, opts)
+                    }?.asImageBitmap()
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (result != null) {
+                tile.imageBitmap = result
+                tile.loadError = ""
+            } else {
+                tile.loadError = "图片加载失败"
+            }
         }
     }
 
@@ -151,35 +203,68 @@ fun VideoTile(
                     minOf(boxW / baseH, boxH / baseW)
                 }
             } else 1f
+            val transform = Modifier
+                .align(Alignment.Center)
+                .graphicsLayer {
+                    scaleX = fitFactor * tile.scale
+                    scaleY = fitFactor * tile.scale
+                    translationX = tile.tx
+                    translationY = tile.ty
+                    rotationZ = tile.rotation
+                }
 
-            AndroidView(
-                factory = { ctx ->
-                    android.view.TextureView(ctx).also { player.setVideoTextureView(it) }
-                },
-                update = { view ->
-                    val params = view.layoutParams
-                    params.width = baseW.toInt()
-                    params.height = baseH.toInt()
-                    view.layoutParams = params
-                },
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .graphicsLayer {
-                        scaleX = fitFactor * tile.scale
-                        scaleY = fitFactor * tile.scale
-                        translationX = tile.tx
-                        translationY = tile.ty
-                        rotationZ = tile.rotation
-                    }
-            )
+            if (tile.type == TileType.IMAGE) {
+                val bmp = tile.imageBitmap
+                if (bmp != null) {
+                    val density = LocalDensity.current
+                    Image(
+                        bitmap = bmp,
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = transform.requiredSize(
+                            with(density) { baseW.toDp() },
+                            with(density) { baseH.toDp() }
+                        )
+                    )
+                }
+            } else {
+                AndroidView(
+                    factory = { ctx ->
+                        android.view.TextureView(ctx).also { player.setVideoTextureView(it) }
+                    },
+                    update = { view ->
+                        val params = view.layoutParams
+                        params.width = baseW.toInt()
+                        params.height = baseH.toInt()
+                        view.layoutParams = params
+                    },
+                    modifier = transform
+                )
+            }
         }
 
         if (!tile.hasVideo) {
-            Button(
-                onClick = onPickVideo,
-                modifier = Modifier.align(Alignment.Center)
+            Column(
+                Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("＋ 添加视频", fontSize = 14.sp)
+                Button(
+                    onClick = onPickVideo,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 12.dp, vertical = 6.dp
+                    )
+                ) {
+                    Text("＋ 添加视频", fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = onPickImage,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 12.dp, vertical = 6.dp
+                    )
+                ) {
+                    Text("＋ 添加图片", fontSize = 14.sp)
+                }
             }
         }
 
@@ -195,58 +280,83 @@ fun VideoTile(
             )
         }
 
-        if (tile.hasVideo && tile.showControls && showMoveBar) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(4.dp)
-                    .background(Color(0x66000000), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                    // 消费点击：点在顶部操作区不触发格子的显隐切换
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {},
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("换位", fontSize = 11.sp, color = Color.White)
-                Spacer(Modifier.padding(2.dp))
-                SmallButton("⇦") { onMove(-1) }
-                Spacer(Modifier.padding(2.dp))
-                SmallButton("⇨") { onMove(1) }
+        if (tile.hasVideo && tile.showControls) {
+            if (showMoveBar) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(4.dp)
+                        .background(Color(0x66000000), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        // 消费点击：点在顶部操作区不触发格子的显隐切换
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {},
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("换位", fontSize = 11.sp, color = Color.White)
+                    Spacer(Modifier.padding(2.dp))
+                    SmallButton("⇦") { onMove(-1) }
+                    Spacer(Modifier.padding(2.dp))
+                    SmallButton("⇨") { onMove(1) }
+                }
             }
 
-            Controls(
-                tile = tile,
-                player = player,
-                dragging = dragging,
-                dragPosition = dragPosition,
-                onDragStart = { dragging = true; dragPosition = tile.positionMs.toFloat() },
-                onDrag = { dragPosition = it },
-                onDragEnd = {
-                    dragging = false
-                    player.seekTo(dragPosition.toLong())
-                },
-                onVolume = { v ->
-                    tile.volume = v
-                    player.volume = v
-                    onCalibrationChange()
-                },
-                onRotate = {
-                    tile.rotation = (tile.rotation + 90f) % 360f
-                    onCalibrationChange()
-                },
-                onSwitchVideo = onSwitchVideo,
-                onClose = onCloseTile,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    // 消费点击：点在控制条上不触发格子的显隐切换
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {}
-            )
+            if (tile.type == TileType.VIDEO) {
+                Controls(
+                    tile = tile,
+                    player = player,
+                    dragging = dragging,
+                    dragPosition = dragPosition,
+                    onDragStart = { dragging = true; dragPosition = tile.positionMs.toFloat() },
+                    onDrag = { dragPosition = it },
+                    onDragEnd = {
+                        dragging = false
+                        player.seekTo(dragPosition.toLong())
+                    },
+                    onVolume = { v ->
+                        tile.volume = v
+                        player.volume = v
+                        onCalibrationChange()
+                    },
+                    onRotate = {
+                        tile.rotation = (tile.rotation + 90f) % 360f
+                        onCalibrationChange()
+                    },
+                    onSwitchVideo = onSwitchVideo,
+                    onClose = onCloseTile,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        // 消费点击：点在控制条上不触发格子的显隐切换
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {}
+                )
+            } else {
+                // 图片格子：无播放/进度/音量/切视频，只保留旋转和关闭
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(4.dp)
+                        .background(Color(0x66000000), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {},
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SmallButton("⟳") {
+                        tile.rotation = (tile.rotation + 90f) % 360f
+                        onCalibrationChange()
+                    }
+                    Spacer(Modifier.padding(4.dp))
+                    SmallButton("✕", Color(0xFFFF8888)) { onCloseTile() }
+                }
+            }
         }
     }
 }
