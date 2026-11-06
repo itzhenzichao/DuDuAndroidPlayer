@@ -51,6 +51,7 @@ private const val BASE_MAX_EDGE = 720f
 fun VideoTile(
     tile: TileUiState,
     player: ExoPlayer,
+    showMoveBar: Boolean,
     onPickVideo: () -> Unit,
     onTapTile: () -> Unit,
     onMove: (Int) -> Unit,
@@ -142,8 +143,13 @@ fun VideoTile(
                 baseH = BASE_MAX_EDGE
                 baseW = BASE_MAX_EDGE * tile.videoW / tile.videoH
             }
+            // 90/270° 旋转后画面视觉宽高互换，fitFactor 按交换后的比例算，保证旋转后仍撑满可显示区域
             val fitFactor = if (boxW > 0 && boxH > 0) {
-                minOf(boxW / baseW, boxH / baseH)
+                if (tile.rotation % 180f == 0f) {
+                    minOf(boxW / baseW, boxH / baseH)
+                } else {
+                    minOf(boxW / baseH, boxH / baseW)
+                }
             } else 1f
 
             AndroidView(
@@ -189,7 +195,7 @@ fun VideoTile(
             )
         }
 
-        if (tile.hasVideo && tile.showControls) {
+        if (tile.hasVideo && tile.showControls && showMoveBar) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)

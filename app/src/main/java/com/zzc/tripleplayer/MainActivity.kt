@@ -264,6 +264,7 @@ class MainActivity : ComponentActivity() {
                     VideoTile(
                         tile = t,
                         player = players[i],
+                        showMoveBar = tileCount > 1,
                         onPickVideo = { pickAndLoad(i) },
                         onTapTile = { onTileTapped(i) },
                         onMove = { dir -> onMove(i, dir) },
