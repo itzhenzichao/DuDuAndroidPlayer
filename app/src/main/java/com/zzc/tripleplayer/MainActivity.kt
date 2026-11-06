@@ -15,12 +15,19 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,9 +35,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -59,6 +69,10 @@ class MainActivity : ComponentActivity() {
             loadVideoList()
             loadImageList()
         }
+    }
+
+    private val layoutPrefs by lazy {
+        getSharedPreferences("layout_settings", MODE_PRIVATE)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -181,6 +195,11 @@ class MainActivity : ComponentActivity() {
         // >= 0 = 正在给该格子选媒体（内部选片弹层）
         var pickingTile by remember { mutableStateOf(-1) }
         var pickingImage by remember { mutableStateOf(false) }
+        // 多视频布局：false = 经典（等分铺满），true = 紧凑（按画面比例贴齐居中）
+        var compactLayout by remember {
+            mutableStateOf(layoutPrefs.getBoolean("compact_layout", false))
+        }
+        var showLayoutDialog by remember { mutableStateOf(false) }
 
         fun loadTile(i: Int, uri: Uri, type: TileType = TileType.VIDEO) {
             val t = tiles[i]
@@ -319,7 +338,25 @@ class MainActivity : ComponentActivity() {
             BoxWithConstraints(
                 modifier = Modifier.fillMaxSize().background(Color.Black)
             ) {
-                val cellW = maxWidth / tileCount
+                val screenW = maxWidth
+                val screenH = maxHeight
+                // 紧凑布局：每格宽度 = 该格画面按屏高适配后的视觉宽度（90/270° 旋转后宽高互换），
+                // 格子贴齐、整体居中；总宽超屏时整体等比压缩。空格子按 16:9 估宽。
+                val compact = compactLayout && tileCount > 1
+                val widths = if (compact) {
+                    tiles.map { t ->
+                        val vw = t.videoW
+                        val vh = t.videoH
+                        val aspect = if (vw > 0 && vh > 0) {
+                            if (t.rotation % 180f != 0f) vh.toFloat() / vw else vw.toFloat() / vh
+                        } else 16f / 9f
+                        screenH * aspect
+                    }
+                } else {
+                    List(tileCount) { screenW / tileCount }
+                }
+                val totalW = widths.fold(0.dp) { acc, w -> acc + w }
+                var x = if (compact) (screenW - totalW) / 2 else 0.dp
                 tiles.forEachIndexed { i, t ->
                     VideoTile(
                         tile = t,
@@ -333,10 +370,11 @@ class MainActivity : ComponentActivity() {
                         onCalibrationChange = { saveCalibration(i) },
                         onCloseTile = { closeTile(i) },
                         modifier = Modifier
-                            .size(cellW, maxHeight)
-                            .offset(x = cellW * i)
+                            .size(widths[i], screenH)
+                            .offset(x = x)
                             .zIndex(1f)
                     )
+                    x += widths[i]
                 }
 
                 if (pickingTile >= 0) {
@@ -376,6 +414,7 @@ class MainActivity : ComponentActivity() {
                     videos = videoList.value,
                     multiMode = multiMode,
                     onToggleMulti = { multiMode = it },
+                    onOpenSettings = { showLayoutDialog = true },
                     onOpenFolder = { viewingFolder = it }
                 )
             } else {
@@ -385,6 +424,7 @@ class MainActivity : ComponentActivity() {
                     videos = folderVideos,
                     multiMode = multiMode,
                     onToggleMulti = { multiMode = it },
+                    onOpenSettings = { showLayoutDialog = true },
                     onSelect = { v ->
                         if (multiMode) {
                             pendingVideo = v
@@ -396,6 +436,59 @@ class MainActivity : ComponentActivity() {
                     onBack = { viewingFolder = null }
                 )
             }
+        }
+
+        if (showLayoutDialog) {
+            AlertDialog(
+                onDismissRequest = { showLayoutDialog = false },
+                title = { Text("多视频布局") },
+                text = {
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    compactLayout = false
+                                    layoutPrefs.edit().putBoolean("compact_layout", false).apply()
+                                    showLayoutDialog = false
+                                }
+                        ) {
+                            RadioButton(selected = !compactLayout, onClick = null)
+                            Column(Modifier.padding(start = 8.dp)) {
+                                Text("经典")
+                                Text(
+                                    "等分铺满屏幕（现状）",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    compactLayout = true
+                                    layoutPrefs.edit().putBoolean("compact_layout", true).apply()
+                                    showLayoutDialog = false
+                                }
+                        ) {
+                            RadioButton(selected = compactLayout, onClick = null)
+                            Column(Modifier.padding(start = 8.dp)) {
+                                Text("紧凑")
+                                Text(
+                                    "格子按画面比例无缝挨着，整体居中",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {}
+            )
         }
 
         if (showCountDialog) {

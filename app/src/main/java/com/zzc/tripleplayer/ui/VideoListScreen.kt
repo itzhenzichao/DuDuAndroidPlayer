@@ -50,6 +50,7 @@ private fun TopBar(
     showBack: Boolean,
     multiMode: Boolean,
     onToggleMulti: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
     onBack: () -> Unit
 ) {
     Row(
@@ -70,6 +71,15 @@ private fun TopBar(
             )
         }
         Text(title, color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+        // ⚙ 放在开关左边：Switch 触控目标会向右外扩，贴右边会吞掉点击
+        Text(
+            "⚙",
+            color = Color.White,
+            fontSize = 18.sp,
+            modifier = Modifier
+                .clickable { onOpenSettings() }
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        )
         Text("多视频", color = Color.White, fontSize = 14.sp)
         Switch(checked = multiMode, onCheckedChange = onToggleMulti)
     }
@@ -80,13 +90,14 @@ fun FolderListScreen(
     videos: List<VideoItem>,
     multiMode: Boolean,
     onToggleMulti: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenFolder: (String) -> Unit
 ) {
     val folders = remember(videos) {
         videos.groupBy { it.folder }.toList()
     }
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        TopBar("视频文件夹", showBack = false, multiMode, onToggleMulti, onBack = {})
+        TopBar("视频文件夹", showBack = false, multiMode, onToggleMulti, onOpenSettings, onBack = {})
         if (folders.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("没有视频文件", color = Color(0xFF888888), fontSize = 14.sp)
@@ -145,11 +156,12 @@ fun FolderVideoListScreen(
     videos: List<VideoItem>,
     multiMode: Boolean,
     onToggleMulti: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
     onSelect: (VideoItem) -> Unit,
     onBack: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        TopBar(folderName, showBack = true, multiMode, onToggleMulti, onBack)
+        TopBar(folderName, showBack = true, multiMode, onToggleMulti, onOpenSettings, onBack)
         LazyVerticalGrid(
             columns = GridCells.Fixed(6),
             contentPadding = PaddingValues(8.dp),
