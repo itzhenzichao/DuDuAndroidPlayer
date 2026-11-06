@@ -341,7 +341,7 @@ class MainActivity : ComponentActivity() {
                 val screenW = maxWidth
                 val screenH = maxHeight
                 // 紧凑布局：每格宽度 = 该格画面按屏高适配后的视觉宽度（90/270° 旋转后宽高互换），
-                // 格子贴齐、整体居中；总宽超屏时整体等比压缩。空格子按 16:9 估宽。
+                // 格子贴齐、整体居中；总宽超屏时整体等比压缩。空格子用窄占位（1/3 屏高宽）。
                 val compact = compactLayout && tileCount > 1
                 val widths = if (compact) {
                     tiles.map { t ->
@@ -349,7 +349,7 @@ class MainActivity : ComponentActivity() {
                         val vh = t.videoH
                         val aspect = if (vw > 0 && vh > 0) {
                             if (t.rotation % 180f != 0f) vh.toFloat() / vw else vw.toFloat() / vh
-                        } else 16f / 9f
+                        } else 1f / 3f
                         screenH * aspect
                     }
                 } else {

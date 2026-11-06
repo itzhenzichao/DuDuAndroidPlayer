@@ -299,37 +299,68 @@ fun VideoTile(
             }
 
             if (tile.type == TileType.VIDEO) {
-                Controls(
-                    tile = tile,
-                    player = player,
-                    dragging = dragging,
-                    dragPosition = dragPosition,
-                    onDragStart = { dragging = true; dragPosition = tile.positionMs.toFloat() },
-                    onDrag = { dragPosition = it },
-                    onDragEnd = {
-                        dragging = false
-                        player.seekTo(dragPosition.toLong())
-                    },
-                    onVolume = { v ->
-                        tile.volume = v
-                        player.volume = v
-                        onCalibrationChange()
-                    },
-                    onRotate = {
-                        tile.rotation = (tile.rotation + 90f) % 360f
-                        onCalibrationChange()
-                    },
-                    onSwitchVideo = onSwitchVideo,
-                    onClose = onCloseTile,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        // 消费点击：点在控制条上不触发格子的显隐切换
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {}
-                )
+                val density = LocalDensity.current
+                // 紧凑布局下竖屏格子很窄（约 160dp），完整控制条（音量条+多行按钮）会挤爆，换精简版
+                val narrow = boxW > 0f && boxW / density.density < 200f
+                if (narrow) {
+                    CompactControls(
+                        tile = tile,
+                        player = player,
+                        dragging = dragging,
+                        dragPosition = dragPosition,
+                        onDragStart = { dragging = true; dragPosition = tile.positionMs.toFloat() },
+                        onDrag = { dragPosition = it },
+                        onDragEnd = {
+                            dragging = false
+                            player.seekTo(dragPosition.toLong())
+                        },
+                        onSwitchVideo = onSwitchVideo,
+                        onRotate = {
+                            tile.rotation = (tile.rotation + 90f) % 360f
+                            onCalibrationChange()
+                        },
+                        onClose = onCloseTile,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {}
+                    )
+                } else {
+                    Controls(
+                        tile = tile,
+                        player = player,
+                        dragging = dragging,
+                        dragPosition = dragPosition,
+                        onDragStart = { dragging = true; dragPosition = tile.positionMs.toFloat() },
+                        onDrag = { dragPosition = it },
+                        onDragEnd = {
+                            dragging = false
+                            player.seekTo(dragPosition.toLong())
+                        },
+                        onVolume = { v ->
+                            tile.volume = v
+                            player.volume = v
+                            onCalibrationChange()
+                        },
+                        onRotate = {
+                            tile.rotation = (tile.rotation + 90f) % 360f
+                            onCalibrationChange()
+                        },
+                        onSwitchVideo = onSwitchVideo,
+                        onClose = onCloseTile,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            // 消费点击：点在控制条上不触发格子的显隐切换
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {}
+                    )
+                }
             } else {
                 // 图片格子：无播放/进度/音量/切视频，只保留旋转和关闭
                 Row(
@@ -383,10 +414,6 @@ private fun Controls(
             .padding(4.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SmallButton(if (tile.playing) "⏸" else "▶") {
-                if (player.isPlaying) player.pause() else player.play()
-            }
-            Spacer(Modifier.padding(3.dp))
             Text(
                 formatTime(tile.positionMs) + " / " + formatTime(tile.durationMs),
                 fontSize = 10.sp,
@@ -423,13 +450,16 @@ private fun Controls(
                 )
             )
         }
+        // ⏮ ▶ ⏭ 居中，⟳ ✕ 右对齐
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.weight(1f))
             SmallButton("⏮") { onSwitchVideo(-1) }
-            Spacer(Modifier.padding(2.dp))
+            SmallButton(if (tile.playing) "⏸" else "▶") {
+                if (player.isPlaying) player.pause() else player.play()
+            }
             SmallButton("⏭") { onSwitchVideo(1) }
-            Spacer(Modifier.padding(2.dp))
+            Spacer(Modifier.weight(1f))
             SmallButton("⟳") { onRotate() }
-            Spacer(Modifier.padding(2.dp))
             SmallButton("✕", Color(0xFFFF8888)) { onClose() }
         }
     }
@@ -447,4 +477,60 @@ private fun SmallButton(text: String, tint: Color = Color.White, onClick: () -> 
             .clickable { onClick() }
             .padding(horizontal = 7.dp, vertical = 2.dp)
     )
+}
+
+// 窄格子（紧凑布局下的竖屏视频）用的精简控制条：进度条 + 单行按钮，无音量条
+@Composable
+private fun CompactControls(
+    tile: TileUiState,
+    player: ExoPlayer,
+    dragging: Boolean,
+    dragPosition: Float,
+    onDragStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+    onSwitchVideo: (Int) -> Unit,
+    onRotate: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier
+            .padding(2.dp)
+            .background(Color(0x66000000), RoundedCornerShape(4.dp))
+            .padding(2.dp)
+    ) {
+        Slider(
+            value = if (dragging) dragPosition else tile.positionMs.toFloat(),
+            onValueChange = {
+                if (!dragging) onDragStart()
+                onDrag(it)
+            },
+            onValueChangeFinished = onDragEnd,
+            valueRange = 0f..(if (tile.durationMs > 0) tile.durationMs.toFloat() else 1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(16.dp),
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = Color(0xFF1A73E8)
+            )
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                formatTime(tile.positionMs) + "/" + formatTime(tile.durationMs),
+                fontSize = 9.sp,
+                color = Color.White
+            )
+            Spacer(Modifier.weight(1f))
+            SmallButton("⏮") { onSwitchVideo(-1) }
+            SmallButton(if (tile.playing) "⏸" else "▶") {
+                if (player.isPlaying) player.pause() else player.play()
+            }
+            SmallButton("⏭") { onSwitchVideo(1) }
+            Spacer(Modifier.weight(1f))
+            SmallButton("⟳") { onRotate() }
+            SmallButton("✕", Color(0xFFFF8888)) { onClose() }
+        }
+    }
 }
