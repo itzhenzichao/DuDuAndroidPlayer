@@ -349,46 +349,16 @@ class MainActivity : ComponentActivity() {
             ) {
                 val screenW = maxWidth
                 val screenH = maxHeight
-                // 紧凑布局：每格宽度按该格画面宽高比计算（90/270° 旋转后视觉宽高互换）。
-                // 总宽不超屏：贴齐、整体居中，画面恰好等高贴合；
-                // 总宽超屏：空格子保持固定窄宽（保证添加按钮能点上、不被挤出屏幕），
-                // 视频格子按宽高比分摊剩余宽度，否则横屏视频会把别的格子挤出屏幕外。
-                val compact = compactLayout && tileCount > 1
-                val widths = if (compact) {
-                    val emptyW = screenH / 3f
-                    val aspects = tiles.map { t ->
-                        val vw = t.videoW
-                        val vh = t.videoH
-                        if (vw > 0 && vh > 0) {
-                            if (t.rotation % 180f != 0f) vh.toFloat() / vw else vw.toFloat() / vh
-                        } else null
-                    }
-                    val raw = aspects.map { a -> if (a == null) emptyW else screenH * a }
-                    val rawTotal = raw.fold(0.dp) { acc, w -> acc + w }
-                    if (rawTotal.value <= screenW.value) {
-                        raw
-                    } else {
-                        val sumA = aspects.sumOf { (it ?: 0f).toDouble() }.toFloat()
-                        if (sumA <= 0f) {
-                            raw
-                        } else {
-                            val emptyCount = aspects.count { it == null }
-                            val remaining = screenW.value - emptyCount * emptyW.value
-                            aspects.map { a ->
-                                if (a == null) emptyW else remaining.dp * (a / sumA)
-                            }
-                        }
-                    }
-                } else {
-                    List(tileCount) { screenW / tileCount }
-                }
-                val totalW = widths.fold(0.dp) { acc, w -> acc + w }
-                var x = if (compact) (screenW - totalW) / 2 else 0.dp
+                // 紧凑 = 经典等分 + 画面填满格子（去掉格子间的黑边缝隙，画面超出部分裁剪）
+                val fillContent = compactLayout && tileCount > 1
+                val cellW = screenW / tileCount
+                var x = 0.dp
                 tiles.forEachIndexed { i, t ->
                     VideoTile(
                         tile = t,
                         player = players[i],
                         showMoveBar = tileCount > 1,
+                        fillContent = fillContent,
                         onPickVideo = { pickAndLoad(i, false) },
                         onPickImage = { pickAndLoad(i, true) },
                         onTapTile = { onTileTapped(i) },
@@ -397,11 +367,11 @@ class MainActivity : ComponentActivity() {
                         onCalibrationChange = { saveCalibration(i) },
                         onCloseTile = { closeTile(i) },
                         modifier = Modifier
-                            .size(widths[i], screenH)
+                            .size(cellW, screenH)
                             .offset(x = x)
                             .zIndex(1f)
                     )
-                    x += widths[i]
+                    x += cellW
                 }
 
                 if (pickingTile >= 0) {
@@ -506,7 +476,7 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.padding(start = 8.dp)) {
                                 Text("紧凑")
                                 Text(
-                                    "格子按画面比例无缝挨着，整体居中",
+                                    "等分排列不变，画面填满格子去掉间隙（超出部分裁剪）",
                                     fontSize = 12.sp,
                                     color = Color.Gray
                                 )

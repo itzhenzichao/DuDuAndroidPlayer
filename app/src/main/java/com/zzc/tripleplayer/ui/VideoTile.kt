@@ -62,6 +62,7 @@ fun VideoTile(
     tile: TileUiState,
     player: ExoPlayer,
     showMoveBar: Boolean,
+    fillContent: Boolean,
     onPickVideo: () -> Unit,
     onPickImage: () -> Unit,
     onTapTile: () -> Unit,
@@ -200,12 +201,15 @@ fun VideoTile(
                 baseH = BASE_MAX_EDGE
                 baseW = BASE_MAX_EDGE * tile.videoW / tile.videoH
             }
-            // 90/270° 旋转后画面视觉宽高互换，fitFactor 按交换后的比例算，保证旋转后仍撑满可显示区域
+            // 90/270° 旋转后画面视觉宽高互换。fitFactor：
+            // 经典模式取 min = 完整显示画面（留黑边）；紧凑模式取 max = 填满格子去掉格子间黑缝（画面裁边）
             val fitFactor = if (boxW > 0 && boxH > 0) {
                 if (tile.rotation % 180f == 0f) {
-                    minOf(boxW / baseW, boxH / baseH)
+                    if (fillContent) maxOf(boxW / baseW, boxH / baseH)
+                    else minOf(boxW / baseW, boxH / baseH)
                 } else {
-                    minOf(boxW / baseH, boxH / baseW)
+                    if (fillContent) maxOf(boxW / baseH, boxH / baseW)
+                    else minOf(boxW / baseH, boxH / baseW)
                 }
             } else 1f
             val transform = Modifier
