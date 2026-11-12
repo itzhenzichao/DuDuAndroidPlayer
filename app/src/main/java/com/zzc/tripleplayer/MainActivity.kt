@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import com.zzc.tripleplayer.data.CalibrationStore
 import com.zzc.tripleplayer.model.TileType
@@ -306,10 +307,18 @@ class MainActivity : ComponentActivity() {
             repeat(count) { idx ->
                 tiles.add(TileUiState(idx))
                 players.add(
-                    ExoPlayer.Builder(this@MainActivity).build().apply {
-                        repeatMode = Player.REPEAT_MODE_ONE
-                        playWhenReady = false
-                    }
+                    ExoPlayer.Builder(this@MainActivity)
+                        // 多个播放器并存的内存大头是媒体缓冲，默认 50s 太大容易 OOM；
+                        // 本地文件小缓冲足够
+                        .setLoadControl(
+                            DefaultLoadControl.Builder()
+                                .setBufferDurationsMs(3000, 8000, 1000, 2000)
+                                .build()
+                        )
+                        .build().apply {
+                            repeatMode = Player.REPEAT_MODE_ONE
+                            playWhenReady = false
+                        }
                 )
             }
             tileCount = count
@@ -340,17 +349,35 @@ class MainActivity : ComponentActivity() {
             ) {
                 val screenW = maxWidth
                 val screenH = maxHeight
-                // 紧凑布局：每格宽度 = 该格画面按屏高适配后的视觉宽度（90/270° 旋转后宽高互换），
-                // 格子贴齐、整体居中；总宽超屏时整体等比压缩。空格子用窄占位（1/3 屏高宽）。
+                // 紧凑布局：每格宽度按该格画面宽高比计算（90/270° 旋转后视觉宽高互换）。
+                // 总宽不超屏：贴齐、整体居中，画面恰好等高贴合；
+                // 总宽超屏：空格子保持固定窄宽（保证添加按钮能点上、不被挤出屏幕），
+                // 视频格子按宽高比分摊剩余宽度，否则横屏视频会把别的格子挤出屏幕外。
                 val compact = compactLayout && tileCount > 1
                 val widths = if (compact) {
-                    tiles.map { t ->
+                    val emptyW = screenH / 3f
+                    val aspects = tiles.map { t ->
                         val vw = t.videoW
                         val vh = t.videoH
-                        val aspect = if (vw > 0 && vh > 0) {
+                        if (vw > 0 && vh > 0) {
                             if (t.rotation % 180f != 0f) vh.toFloat() / vw else vw.toFloat() / vh
-                        } else 1f / 3f
-                        screenH * aspect
+                        } else null
+                    }
+                    val raw = aspects.map { a -> if (a == null) emptyW else screenH * a }
+                    val rawTotal = raw.fold(0.dp) { acc, w -> acc + w }
+                    if (rawTotal.value <= screenW.value) {
+                        raw
+                    } else {
+                        val sumA = aspects.sumOf { (it ?: 0f).toDouble() }.toFloat()
+                        if (sumA <= 0f) {
+                            raw
+                        } else {
+                            val emptyCount = aspects.count { it == null }
+                            val remaining = screenW.value - emptyCount * emptyW.value
+                            aspects.map { a ->
+                                if (a == null) emptyW else remaining.dp * (a / sumA)
+                            }
+                        }
                     }
                 } else {
                     List(tileCount) { screenW / tileCount }

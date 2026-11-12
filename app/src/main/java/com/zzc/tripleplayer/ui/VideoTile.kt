@@ -81,8 +81,16 @@ fun VideoTile(
         val listener = object : Player.Listener {
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
-                    tile.videoW = videoSize.width
-                    tile.videoH = videoSize.height
+                    // 录制带旋转元数据的视频（下载/转发文件常见），解码上报的是未旋转尺寸，
+                    // 90/270° 时交换宽高，否则横竖屏判断和紧凑布局全错
+                    val rot = videoSize.unappliedRotationDegrees
+                    if (rot == 90 || rot == 270) {
+                        tile.videoW = videoSize.height
+                        tile.videoH = videoSize.width
+                    } else {
+                        tile.videoW = videoSize.width
+                        tile.videoH = videoSize.height
+                    }
                 }
             }
 
@@ -91,6 +99,8 @@ fun VideoTile(
                 // onVideoSizeChanged 要等 TextureView 放好才触发，这里先回写打破死锁
                 tracks.groups.firstOrNull { it.type == androidx.media3.common.C.TRACK_TYPE_VIDEO && it.isSelected }?.let { g ->
                     val f = g.getTrackFormat(0)
+                    // 轨道 format 不带旋转元数据（media3 1.4.1），先按原始宽高回写；
+                    // 带旋转的视频等 onVideoSizeChanged 的 unappliedRotationDegrees 纠正
                     if (f.width > 0 && f.height > 0 && tile.videoW == 0) {
                         tile.videoW = f.width
                         tile.videoH = f.height
@@ -465,17 +475,25 @@ private fun Controls(
     }
 }
 
-// Material3 Button 有最小尺寸（58x40dp）压不小，操作栏用轻量文本按钮
+// Material3 Button 有最小尺寸（58x40dp）压不小，操作栏用轻量文本按钮；dense 用于窄格子
 @Composable
-private fun SmallButton(text: String, tint: Color = Color.White, onClick: () -> Unit) {
+private fun SmallButton(
+    text: String,
+    tint: Color = Color.White,
+    dense: Boolean = false,
+    onClick: () -> Unit
+) {
     Text(
         text,
-        fontSize = 12.sp,
+        fontSize = if (dense) 11.sp else 12.sp,
         color = tint,
         modifier = Modifier
             .background(Color(0x40000000), RoundedCornerShape(4.dp))
             .clickable { onClick() }
-            .padding(horizontal = 7.dp, vertical = 2.dp)
+            .padding(
+                horizontal = if (dense) 4.dp else 7.dp,
+                vertical = if (dense) 1.dp else 2.dp
+            )
     )
 }
 
@@ -500,37 +518,39 @@ private fun CompactControls(
             .background(Color(0x66000000), RoundedCornerShape(4.dp))
             .padding(2.dp)
     ) {
-        Slider(
-            value = if (dragging) dragPosition else tile.positionMs.toFloat(),
-            onValueChange = {
-                if (!dragging) onDragStart()
-                onDrag(it)
-            },
-            onValueChangeFinished = onDragEnd,
-            valueRange = 0f..(if (tile.durationMs > 0) tile.durationMs.toFloat() else 1f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(16.dp),
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color(0xFF1A73E8)
-            )
-        )
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Slider(
+                value = if (dragging) dragPosition else tile.positionMs.toFloat(),
+                onValueChange = {
+                    if (!dragging) onDragStart()
+                    onDrag(it)
+                },
+                onValueChangeFinished = onDragEnd,
+                valueRange = 0f..(if (tile.durationMs > 0) tile.durationMs.toFloat() else 1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(16.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color(0xFF1A73E8)
+                )
+            )
             Text(
                 formatTime(tile.positionMs) + "/" + formatTime(tile.durationMs),
-                fontSize = 9.sp,
+                fontSize = 8.sp,
                 color = Color.White
             )
-            Spacer(Modifier.weight(1f))
-            SmallButton("⏮") { onSwitchVideo(-1) }
-            SmallButton(if (tile.playing) "⏸" else "▶") {
+        }
+        // 5 个按钮用最小内边距，保证 190px 宽的窄格子也放得下
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SmallButton("⏮", dense = true) { onSwitchVideo(-1) }
+            SmallButton(if (tile.playing) "⏸" else "▶", dense = true) {
                 if (player.isPlaying) player.pause() else player.play()
             }
-            SmallButton("⏭") { onSwitchVideo(1) }
+            SmallButton("⏭", dense = true) { onSwitchVideo(1) }
             Spacer(Modifier.weight(1f))
-            SmallButton("⟳") { onRotate() }
-            SmallButton("✕", Color(0xFFFF8888)) { onClose() }
+            SmallButton("⟳", dense = true) { onRotate() }
+            SmallButton("✕", Color(0xFFFF8888), dense = true) { onClose() }
         }
     }
 }
