@@ -200,10 +200,15 @@ class MainActivity : ComponentActivity() {
             mutableStateOf(layoutPrefs.getBoolean("compact_layout", false))
         }
         var showLayoutDialog by remember { mutableStateOf(false) }
+        // 格子位置 -> tiles/players 列表下标的映射。换位只改映射（状态写会触发重组），
+        // 播放器实例不动、不重新 prepare，视频继续播不中断
+        var tileOrder by remember { mutableStateOf(listOf(0)) }
+        fun tileAt(slot: Int) = tiles[tileOrder[slot]]
+        fun playerAt(slot: Int) = players[tileOrder[slot]]
 
         fun loadTile(i: Int, uri: Uri, type: TileType = TileType.VIDEO) {
-            val t = tiles[i]
-            val p = players[i]
+            val t = tileAt(i)
+            val p = playerAt(i)
             t.reset()
             t.uri = uri.toString()
             t.type = type
@@ -228,24 +233,26 @@ class MainActivity : ComponentActivity() {
         }
 
         fun saveCalibration(i: Int) {
-            val t = tiles[i]
+            val t = tileAt(i)
             if (t.uri.isNotEmpty()) {
                 CalibrationStore.save(Uri.parse(t.uri), t.rotation, t.scale, t.tx, t.ty, t.volume)
             }
         }
 
         fun closeTile(i: Int) {
-            players[i].stop()
-            players[i].clearMediaItems()
-            tiles[i].reset()
+            playerAt(i).stop()
+            playerAt(i).clearMediaItems()
+            tileAt(i).reset()
         }
 
         fun swapTiles(a: Int, b: Int) {
-            if (!tiles[a].hasVideo && !tiles[b].hasVideo) return
-            // 格子与播放器实例一起交换：播放器不重新 prepare，视频继续播不中断。
-            // VideoTile 检测到 player 变化后会把播放器重新绑到新格子的 surface
-            val ta = tiles[a]; tiles[a] = tiles[b]; tiles[b] = ta
-            val pa = players[a]; players[a] = players[b]; players[b] = pa
+            val ta = tileAt(a)
+            val tb = tileAt(b)
+            if (!ta.hasVideo && !tb.hasVideo) return
+            tileOrder = tileOrder.toMutableList().also {
+                it[a] = tileOrder[b]
+                it[b] = tileOrder[a]
+            }
         }
 
         fun onMove(i: Int, dir: Int) {
@@ -256,7 +263,7 @@ class MainActivity : ComponentActivity() {
         fun onSwitchVideo(i: Int, dir: Int) {
             val items = videoList.value
             if (items.isEmpty()) return
-            val cur = mediaIdOf(tiles[i].uri)
+            val cur = mediaIdOf(tileAt(i).uri)
             val idx = items.indexOfFirst { mediaIdOf(it.uri.toString()) == cur }
             if (idx < 0) return
             // 只在当前视频所在文件夹内切换，到头即停
@@ -272,7 +279,7 @@ class MainActivity : ComponentActivity() {
         }
 
         fun onTileTapped(i: Int) {
-            tiles[i].showControls = !tiles[i].showControls
+            tileAt(i).showControls = !tileAt(i).showControls
         }
 
         fun enterPlayer(count: Int, first: VideoItem?) {
@@ -297,6 +304,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
             tileCount = count
+            tileOrder = List(count) { it }
             inPlayer = true
             if (first != null) loadTile(0, first.uri)
         }
@@ -333,10 +341,11 @@ class MainActivity : ComponentActivity() {
                     Color(0xFF9C27B0), Color(0xFF00ACC1), Color(0xFF43A047), Color(0xFFF4511E)
                 )
                 var x = 0.dp
-                tiles.forEachIndexed { i, t ->
+                // 读 tileOrder 状态：换位改映射后这里重组，slot 拿到新的 tile/player
+                tileOrder.take(tileCount).forEachIndexed { i, ti ->
                     VideoTile(
-                        tile = t,
-                        player = players[i],
+                        tile = tiles[ti],
+                        player = players[ti],
                         showMoveBar = tileCount > 1,
                         onPickVideo = { pickAndLoad(i, false) },
                         onPickImage = { pickAndLoad(i, true) },

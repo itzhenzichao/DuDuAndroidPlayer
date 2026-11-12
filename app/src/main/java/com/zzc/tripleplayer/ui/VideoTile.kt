@@ -174,7 +174,9 @@ fun VideoTile(
                 boxW = size.width.toFloat()
                 boxH = size.height.toFloat()
             }
-            .pointerInput(Unit) {
+            // key 绑 tile：换位后本格子的 tile 对象换了身份，手势闭包要跟着换，
+            // 否则捏合/拖动会改到旧格子的校准状态
+            .pointerInput(tile) {
                 detectTransformGestures { _, pan, zoom, _ ->
                     if (!tile.hasVideo) return@detectTransformGestures
                     tile.scale = (tile.scale * zoom).coerceIn(0.1f, 10f)
@@ -183,7 +185,7 @@ fun VideoTile(
                     onCalibrationChange()
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(tile) {
                 detectTapGestures(
                     onTap = { if (tile.hasVideo) onTapTile() }
                 )
