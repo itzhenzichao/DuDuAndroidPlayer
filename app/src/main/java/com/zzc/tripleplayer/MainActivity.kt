@@ -196,7 +196,7 @@ class MainActivity : ComponentActivity() {
         // >= 0 = 正在给该格子选媒体（内部选片弹层）
         var pickingTile by remember { mutableStateOf(-1) }
         var pickingImage by remember { mutableStateOf(false) }
-        // 多视频布局：false = 经典（等分铺满），true = 紧凑（按画面比例贴齐居中）
+        // 多视频布局：false = 经典，true = 紧凑（两者均等分排列、画面按源比例完整显示）
         var compactLayout by remember {
             mutableStateOf(layoutPrefs.getBoolean("compact_layout", false))
         }
@@ -349,8 +349,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 val screenW = maxWidth
                 val screenH = maxHeight
-                // 紧凑 = 经典等分 + 画面填满格子（去掉格子间的黑边缝隙，画面超出部分裁剪）
-                val fillContent = compactLayout && tileCount > 1
+                // 格子等分铺满，画面保持源比例完整显示
                 val cellW = screenW / tileCount
                 var x = 0.dp
                 tiles.forEachIndexed { i, t ->
@@ -358,7 +357,6 @@ class MainActivity : ComponentActivity() {
                         tile = t,
                         player = players[i],
                         showMoveBar = tileCount > 1,
-                        fillContent = fillContent,
                         onPickVideo = { pickAndLoad(i, false) },
                         onPickImage = { pickAndLoad(i, true) },
                         onTapTile = { onTileTapped(i) },
@@ -455,7 +453,7 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.padding(start = 8.dp)) {
                                 Text("经典")
                                 Text(
-                                    "等分铺满屏幕（现状）",
+                                    "等分铺满屏幕，画面按源比例显示",
                                     fontSize = 12.sp,
                                     color = Color.Gray
                                 )
@@ -476,7 +474,7 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.padding(start = 8.dp)) {
                                 Text("紧凑")
                                 Text(
-                                    "等分排列不变，画面填满格子去掉间隙（超出部分裁剪）",
+                                    "等分排列不变，画面同样按源比例完整显示，可用双指缩放自行调整",
                                     fontSize = 12.sp,
                                     color = Color.Gray
                                 )
