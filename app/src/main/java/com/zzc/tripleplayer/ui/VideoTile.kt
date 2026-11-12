@@ -305,9 +305,9 @@ fun VideoTile(
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(4.dp)
-                        .background(Color(0x66000000), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .padding(6.dp)
+                        .background(Color(0x66000000), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                         // 消费点击：点在顶部操作区不触发格子的显隐切换
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -315,10 +315,10 @@ fun VideoTile(
                         ) {},
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("换位", fontSize = 11.sp, color = Color.White)
-                    Spacer(Modifier.padding(2.dp))
+                    Text("换位", fontSize = 13.sp, color = Color.White)
+                    Spacer(Modifier.padding(4.dp))
                     SmallButton("⇦") { onMove(-1) }
-                    Spacer(Modifier.padding(2.dp))
+                    Spacer(Modifier.padding(4.dp))
                     SmallButton("⇨") { onMove(1) }
                 }
             }
@@ -396,9 +396,9 @@ fun VideoTile(
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(4.dp)
-                        .background(Color(0x66000000), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .padding(8.dp)
+                        .background(Color(0x66000000), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -409,7 +409,7 @@ fun VideoTile(
                         tile.rotation = (tile.rotation + 90f) % 360f
                         onCalibrationChange()
                     }
-                    Spacer(Modifier.padding(4.dp))
+                    Spacer(Modifier.padding(6.dp))
                     SmallButton("✕", Color(0xFFFF8888)) { onCloseTile() }
                 }
             }
@@ -440,24 +440,24 @@ private fun Controls(
     var showVolumePanel by remember { mutableStateOf(false) }
     Column(
         modifier
-            .padding(4.dp)
-            .background(Color(0x66000000), RoundedCornerShape(4.dp))
-            .padding(4.dp)
+            .padding(8.dp)
+            .background(Color(0x66000000), RoundedCornerShape(6.dp))
+            .padding(8.dp)
     ) {
         if (showVolumePanel) {
             // 音量弹层：误触只会打开/关闭面板，拖动这里的大滑条才真正改音量
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
             ) {
-                Text("🔊", fontSize = 12.sp)
+                Text("🔊", fontSize = 14.sp)
                 Slider(
                     value = tile.volume,
                     onValueChange = onVolume,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 8.dp)
-                        .height(36.dp),
+                        .padding(horizontal = 10.dp)
+                        .height(40.dp),
                     colors = SliderDefaults.colors(
                         thumbColor = Color.White,
                         activeTrackColor = Color(0xFF1A73E8)
@@ -465,7 +465,7 @@ private fun Controls(
                 )
                 Text(
                     "${(tile.volume * 100).roundToInt()}%",
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     color = Color.White
                 )
             }
@@ -473,7 +473,7 @@ private fun Controls(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 formatTime(tile.positionMs) + " / " + formatTime(tile.durationMs),
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 color = Color.White
             )
         }
@@ -487,7 +487,7 @@ private fun Controls(
             valueRange = 0f..(if (tile.durationMs > 0) tile.durationMs.toFloat() else 1f),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(18.dp),
+                .height(24.dp),
             colors = SliderDefaults.colors(
                 thumbColor = Color.White,
                 activeTrackColor = Color(0xFF1A73E8)
@@ -497,17 +497,17 @@ private fun Controls(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
             SmallButton("⏮") { onSwitchVideo(-1) }
-            Spacer(Modifier.padding(4.dp))
+            Spacer(Modifier.padding(8.dp))
             SmallButton(if (tile.playing) "⏸" else "▶") {
                 if (player.isPlaying) player.pause() else player.play()
             }
-            Spacer(Modifier.padding(4.dp))
+            Spacer(Modifier.padding(8.dp))
             SmallButton("⏭") { onSwitchVideo(1) }
             Spacer(Modifier.weight(1f))
             SmallButton(if (tile.volume > 0.01f) "🔊" else "🔇") { showVolumePanel = !showVolumePanel }
-            Spacer(Modifier.padding(4.dp))
+            Spacer(Modifier.padding(8.dp))
             SmallButton("⟳") { onRotate() }
-            Spacer(Modifier.padding(4.dp))
+            Spacer(Modifier.padding(8.dp))
             SmallButton("✕", Color(0xFFFF8888)) { onClose() }
         }
     }
@@ -523,14 +523,14 @@ private fun SmallButton(
 ) {
     Text(
         text,
-        fontSize = if (dense) 11.sp else 12.sp,
+        fontSize = if (dense) 13.sp else 15.sp,
         color = tint,
         modifier = Modifier
-            .background(Color(0x40000000), RoundedCornerShape(4.dp))
+            .background(Color(0x40000000), RoundedCornerShape(6.dp))
             .clickable { onClick() }
             .padding(
-                horizontal = if (dense) 4.dp else 7.dp,
-                vertical = if (dense) 1.dp else 2.dp
+                horizontal = if (dense) 6.dp else 10.dp,
+                vertical = if (dense) 3.dp else 5.dp
             )
     )
 }
@@ -554,21 +554,21 @@ private fun CompactControls(
     var showVolumePanel by remember { mutableStateOf(false) }
     Column(
         modifier
-            .padding(2.dp)
-            .background(Color(0x66000000), RoundedCornerShape(4.dp))
-            .padding(2.dp)
+            .padding(4.dp)
+            .background(Color(0x66000000), RoundedCornerShape(6.dp))
+            .padding(6.dp)
     ) {
         if (showVolumePanel) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
             ) {
                 Slider(
                     value = tile.volume,
                     onValueChange = onVolume,
                     modifier = Modifier
                         .weight(1f)
-                        .height(30.dp),
+                        .height(36.dp),
                     colors = SliderDefaults.colors(
                         thumbColor = Color.White,
                         activeTrackColor = Color(0xFF1A73E8)
@@ -576,9 +576,9 @@ private fun CompactControls(
                 )
                 Text(
                     "${(tile.volume * 100).roundToInt()}%",
-                    fontSize = 8.sp,
+                    fontSize = 10.sp,
                     color = Color.White,
-                    modifier = Modifier.padding(start = 4.dp)
+                    modifier = Modifier.padding(start = 6.dp)
                 )
             }
         }
@@ -593,7 +593,7 @@ private fun CompactControls(
                 valueRange = 0f..(if (tile.durationMs > 0) tile.durationMs.toFloat() else 1f),
                 modifier = Modifier
                     .weight(1f)
-                    .height(16.dp),
+                    .height(20.dp),
                 colors = SliderDefaults.colors(
                     thumbColor = Color.White,
                     activeTrackColor = Color(0xFF1A73E8)
@@ -601,26 +601,26 @@ private fun CompactControls(
             )
             Text(
                 formatTime(tile.positionMs) + "/" + formatTime(tile.durationMs),
-                fontSize = 8.sp,
+                fontSize = 10.sp,
                 color = Color.White
             )
         }
         // 6 个按钮 + 最小边距，保证 190px 宽的窄格子也放得下
         Row(verticalAlignment = Alignment.CenterVertically) {
             SmallButton("⏮", dense = true) { onSwitchVideo(-1) }
-            Spacer(Modifier.padding(2.dp))
+            Spacer(Modifier.padding(3.dp))
             SmallButton(if (tile.playing) "⏸" else "▶", dense = true) {
                 if (player.isPlaying) player.pause() else player.play()
             }
-            Spacer(Modifier.padding(2.dp))
+            Spacer(Modifier.padding(3.dp))
             SmallButton("⏭", dense = true) { onSwitchVideo(1) }
             Spacer(Modifier.weight(1f))
             SmallButton(if (tile.volume > 0.01f) "🔊" else "🔇", dense = true) {
                 showVolumePanel = !showVolumePanel
             }
-            Spacer(Modifier.padding(2.dp))
+            Spacer(Modifier.padding(3.dp))
             SmallButton("⟳", dense = true) { onRotate() }
-            Spacer(Modifier.padding(2.dp))
+            Spacer(Modifier.padding(3.dp))
             SmallButton("✕", Color(0xFFFF8888), dense = true) { onClose() }
         }
     }
