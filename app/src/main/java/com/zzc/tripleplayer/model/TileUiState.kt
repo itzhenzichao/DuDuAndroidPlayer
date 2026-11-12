@@ -16,7 +16,8 @@ class TileUiState(val index: Int) {
     var playing by mutableStateOf(false)
     var positionMs by mutableLongStateOf(0L)
     var durationMs by mutableLongStateOf(0L)
-    var volume by mutableFloatStateOf(1f)
+    // 默认 5%：多路视频同时出声，满音量容易吓一跳；有校准记录时按记录恢复
+    var volume by mutableFloatStateOf(0.05f)
     var rotation by mutableFloatStateOf(0f)
     var scale by mutableFloatStateOf(1f)
     var tx by mutableFloatStateOf(0f)
@@ -38,7 +39,7 @@ class TileUiState(val index: Int) {
         playing = false
         positionMs = 0
         durationMs = 0
-        volume = 1f
+        volume = 0.05f
         rotation = 0f
         scale = 1f
         tx = 0f

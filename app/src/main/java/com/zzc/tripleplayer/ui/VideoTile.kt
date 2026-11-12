@@ -50,6 +50,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import com.zzc.tripleplayer.model.TileType
 import com.zzc.tripleplayer.model.TileUiState
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -167,7 +168,7 @@ fun VideoTile(
 
     Box(
         modifier
-            .background(Color.Black)
+            // 底色由调用方传入（测试用分色），这里不再固定黑色
             .clipToBounds()
             .onSizeChanged { size ->
                 boxW = size.width.toFloat()
@@ -234,9 +235,15 @@ fun VideoTile(
                     )
                 }
             } else {
+                // 换位时格子与播放器实例一起交换（播放器不重新 prepare，视频不中断），
+                // player 变化后要把播放器重新绑到本格子的 surface
+                var surfaceView by remember { mutableStateOf<android.view.TextureView?>(null) }
+                LaunchedEffect(player, surfaceView) {
+                    surfaceView?.let { runCatching { player.setVideoTextureView(it) } }
+                }
                 AndroidView(
                     factory = { ctx ->
-                        android.view.TextureView(ctx).also { player.setVideoTextureView(it) }
+                        android.view.TextureView(ctx).also { surfaceView = it }
                     },
                     update = { view ->
                         val params = view.layoutParams
@@ -244,7 +251,12 @@ fun VideoTile(
                         params.height = baseH.toInt()
                         view.layoutParams = params
                     },
-                    modifier = transform
+                    // 必须用 requiredSize 钉死布局尺寸：基准宽（720px）可能大于格子宽，
+                    // 若被父约束钳制，surface 会把画面压变形再被 fitFactor 缩小（横屏视频又小又扁）
+                    modifier = transform.requiredSize(
+                        with(LocalDensity.current) { baseW.toDp() },
+                        with(LocalDensity.current) { baseH.toDp() }
+                    )
                 )
             }
         }
@@ -324,6 +336,11 @@ fun VideoTile(
                         onDragEnd = {
                             dragging = false
                             player.seekTo(dragPosition.toLong())
+                        },
+                        onVolume = { v ->
+                            tile.volume = v
+                            player.volume = v
+                            onCalibrationChange()
                         },
                         onSwitchVideo = onSwitchVideo,
                         onRotate = {
@@ -418,12 +435,39 @@ private fun Controls(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showVolumePanel by remember { mutableStateOf(false) }
     Column(
         modifier
             .padding(4.dp)
             .background(Color(0x66000000), RoundedCornerShape(4.dp))
             .padding(4.dp)
     ) {
+        if (showVolumePanel) {
+            // 音量弹层：误触只会打开/关闭面板，拖动这里的大滑条才真正改音量
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
+                Text("🔊", fontSize = 12.sp)
+                Slider(
+                    value = tile.volume,
+                    onValueChange = onVolume,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp)
+                        .height(36.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = Color(0xFF1A73E8)
+                    )
+                )
+                Text(
+                    "${(tile.volume * 100).roundToInt()}%",
+                    fontSize = 10.sp,
+                    color = Color.White
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 formatTime(tile.positionMs) + " / " + formatTime(tile.durationMs),
@@ -447,30 +491,21 @@ private fun Controls(
                 activeTrackColor = Color(0xFF1A73E8)
             )
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("🔊", fontSize = 10.sp)
-            Slider(
-                value = tile.volume,
-                onValueChange = onVolume,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(18.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color(0xFF1A73E8)
-                )
-            )
-        }
-        // ⏮ ▶ ⏭ 居中，⟳ ✕ 右对齐
+        // ⏮ ▶ ⏭ 居中，🔊 ⟳ ✕ 右对齐；按钮间留边距防误触
         Row(verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
             SmallButton("⏮") { onSwitchVideo(-1) }
+            Spacer(Modifier.padding(4.dp))
             SmallButton(if (tile.playing) "⏸" else "▶") {
                 if (player.isPlaying) player.pause() else player.play()
             }
+            Spacer(Modifier.padding(4.dp))
             SmallButton("⏭") { onSwitchVideo(1) }
             Spacer(Modifier.weight(1f))
+            SmallButton(if (tile.volume > 0.01f) "🔊" else "🔇") { showVolumePanel = !showVolumePanel }
+            Spacer(Modifier.padding(4.dp))
             SmallButton("⟳") { onRotate() }
+            Spacer(Modifier.padding(4.dp))
             SmallButton("✕", Color(0xFFFF8888)) { onClose() }
         }
     }
@@ -508,17 +543,43 @@ private fun CompactControls(
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
+    onVolume: (Float) -> Unit,
     onSwitchVideo: (Int) -> Unit,
     onRotate: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showVolumePanel by remember { mutableStateOf(false) }
     Column(
         modifier
             .padding(2.dp)
             .background(Color(0x66000000), RoundedCornerShape(4.dp))
             .padding(2.dp)
     ) {
+        if (showVolumePanel) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+            ) {
+                Slider(
+                    value = tile.volume,
+                    onValueChange = onVolume,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(30.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = Color(0xFF1A73E8)
+                    )
+                )
+                Text(
+                    "${(tile.volume * 100).roundToInt()}%",
+                    fontSize = 8.sp,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Slider(
                 value = if (dragging) dragPosition else tile.positionMs.toFloat(),
@@ -542,15 +603,22 @@ private fun CompactControls(
                 color = Color.White
             )
         }
-        // 5 个按钮用最小内边距，保证 190px 宽的窄格子也放得下
+        // 6 个按钮 + 最小边距，保证 190px 宽的窄格子也放得下
         Row(verticalAlignment = Alignment.CenterVertically) {
             SmallButton("⏮", dense = true) { onSwitchVideo(-1) }
+            Spacer(Modifier.padding(2.dp))
             SmallButton(if (tile.playing) "⏸" else "▶", dense = true) {
                 if (player.isPlaying) player.pause() else player.play()
             }
+            Spacer(Modifier.padding(2.dp))
             SmallButton("⏭", dense = true) { onSwitchVideo(1) }
             Spacer(Modifier.weight(1f))
+            SmallButton(if (tile.volume > 0.01f) "🔊" else "🔇", dense = true) {
+                showVolumePanel = !showVolumePanel
+            }
+            Spacer(Modifier.padding(2.dp))
             SmallButton("⟳", dense = true) { onRotate() }
+            Spacer(Modifier.padding(2.dp))
             SmallButton("✕", Color(0xFFFF8888), dense = true) { onClose() }
         }
     }

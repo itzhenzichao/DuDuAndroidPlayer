@@ -38,7 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -228,24 +227,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        fun reload(i: Int) {
-            val t = tiles[i]
-            val p = players[i]
-            if (!t.hasVideo) {
-                p.stop()
-                p.clearMediaItems()
-                return
-            }
-            if (t.type == TileType.IMAGE) {
-                // 图片位图随 TileSnap 迁移，无需重建
-                return
-            }
-            p.setMediaItem(MediaItem.fromUri(Uri.parse(t.uri)))
-            p.volume = t.volume
-            p.prepare()
-            p.playWhenReady = false
-        }
-
         fun saveCalibration(i: Int) {
             val t = tiles[i]
             if (t.uri.isNotEmpty()) {
@@ -260,17 +241,11 @@ class MainActivity : ComponentActivity() {
         }
 
         fun swapTiles(a: Int, b: Int) {
-            val ta = tiles[a]
-            val tb = tiles[b]
-            if (!ta.hasVideo && !tb.hasVideo) return
-            val sa = TileSnap(ta)
-            val sb = TileSnap(tb)
-            ta.reset()
-            tb.reset()
-            sb.restoreTo(ta)
-            sa.restoreTo(tb)
-            reload(a)
-            reload(b)
+            if (!tiles[a].hasVideo && !tiles[b].hasVideo) return
+            // 格子与播放器实例一起交换：播放器不重新 prepare，视频继续播不中断。
+            // VideoTile 检测到 player 变化后会把播放器重新绑到新格子的 surface
+            val ta = tiles[a]; tiles[a] = tiles[b]; tiles[b] = ta
+            val pa = players[a]; players[a] = players[b]; players[b] = pa
         }
 
         fun onMove(i: Int, dir: Int) {
@@ -349,8 +324,14 @@ class MainActivity : ComponentActivity() {
             ) {
                 val screenW = maxWidth
                 val screenH = maxHeight
-                // 格子等分铺满，画面保持源比例完整显示
+                // 格子永远等分，画面永远按源比例最大化显示（等比不变形）。
+                // 两种模式只差格子间距：经典留一点外边距，紧凑紧挨着
+                val gap = if (compactLayout && tileCount > 1) 0.dp else 2.dp
                 val cellW = screenW / tileCount
+                // 测试用：每格一种底色，方便区分格子边界和画面黑边
+                val tileBgs = listOf(
+                    Color(0xFF9C27B0), Color(0xFF00ACC1), Color(0xFF43A047), Color(0xFFF4511E)
+                )
                 var x = 0.dp
                 tiles.forEachIndexed { i, t ->
                     VideoTile(
@@ -365,8 +346,13 @@ class MainActivity : ComponentActivity() {
                         onCalibrationChange = { saveCalibration(i) },
                         onCloseTile = { closeTile(i) },
                         modifier = Modifier
-                            .size(cellW, screenH)
                             .offset(x = x)
+                            .size(cellW, screenH)
+                            // 底色铺满整个格子（含 gap 区域之外），黑边处透出颜色
+                            .background(tileBgs[i % 4])
+                            // padding 放在 size 之后：格子占位仍是 cellW，只是内容内缩，
+                            // 相邻格子的画面之间就隔出 gap*2 的边距
+                            .padding(horizontal = gap)
                             .zIndex(1f)
                     )
                     x += cellW
@@ -453,7 +439,7 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.padding(start = 8.dp)) {
                                 Text("经典")
                                 Text(
-                                    "等分铺满屏幕，画面按源比例显示",
+                                    "等分排列，格子之间留一点边距",
                                     fontSize = 12.sp,
                                     color = Color.Gray
                                 )
@@ -474,7 +460,7 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.padding(start = 8.dp)) {
                                 Text("紧凑")
                                 Text(
-                                    "等分排列不变，画面同样按源比例完整显示，可用双指缩放自行调整",
+                                    "等分排列，格子紧挨着无边距，画面最大化显示",
                                     fontSize = 12.sp,
                                     color = Color.Gray
                                 )
@@ -505,45 +491,5 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
-    }
-}
-
-// 换位时的格子状态快照（视频进度与播放状态不迁移，重新加载后从头暂停）
-private class TileSnap(
-    val uri: String,
-    val type: TileType,
-    val volume: Float,
-    val rotation: Float,
-    val scale: Float,
-    val tx: Float,
-    val ty: Float,
-    val videoW: Int,
-    val videoH: Int,
-    val durationMs: Long,
-    val imageBitmap: ImageBitmap?
-) {
-    constructor(t: TileUiState) : this(
-        t.uri, t.type, t.volume, t.rotation, t.scale, t.tx, t.ty,
-        t.videoW, t.videoH, t.durationMs, t.imageBitmap
-    )
-
-    fun restoreTo(t: TileUiState) {
-        t.uri = uri
-        t.type = type
-        t.hasVideo = uri.isNotEmpty()
-        t.volume = volume
-        t.rotation = rotation
-        t.scale = scale
-        t.tx = tx
-        t.ty = ty
-        t.videoW = videoW
-        t.videoH = videoH
-        t.durationMs = durationMs
-        t.imageBitmap = imageBitmap
-        t.decodeSeq++
-        t.positionMs = 0
-        t.playing = false
-        t.showControls = false
-        t.loadError = ""
     }
 }
