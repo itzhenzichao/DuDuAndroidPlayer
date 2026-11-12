@@ -320,6 +320,8 @@ fun VideoTile(
                     SmallButton("⇦") { onMove(-1) }
                     Spacer(Modifier.padding(4.dp))
                     SmallButton("⇨") { onMove(1) }
+                    Spacer(Modifier.padding(4.dp))
+                    SmallButton("✕", Color(0xFFFF8888)) { onCloseTile() }
                 }
             }
 
@@ -333,6 +335,7 @@ fun VideoTile(
                         player = player,
                         dragging = dragging,
                         dragPosition = dragPosition,
+                        showClose = !showMoveBar,
                         onDragStart = { dragging = true; dragPosition = tile.positionMs.toFloat() },
                         onDrag = { dragPosition = it },
                         onDragEnd = {
@@ -364,6 +367,7 @@ fun VideoTile(
                         player = player,
                         dragging = dragging,
                         dragPosition = dragPosition,
+                        showClose = !showMoveBar,
                         onDragStart = { dragging = true; dragPosition = tile.positionMs.toFloat() },
                         onDrag = { dragPosition = it },
                         onDragEnd = {
@@ -409,8 +413,10 @@ fun VideoTile(
                         tile.rotation = (tile.rotation + 90f) % 360f
                         onCalibrationChange()
                     }
-                    Spacer(Modifier.padding(6.dp))
-                    SmallButton("✕", Color(0xFFFF8888)) { onCloseTile() }
+                    if (!showMoveBar) {
+                        Spacer(Modifier.padding(6.dp))
+                        SmallButton("✕", Color(0xFFFF8888)) { onCloseTile() }
+                    }
                 }
             }
         }
@@ -428,6 +434,7 @@ private fun Controls(
     player: ExoPlayer,
     dragging: Boolean,
     dragPosition: Float,
+    showClose: Boolean,
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
@@ -493,7 +500,7 @@ private fun Controls(
                 activeTrackColor = Color(0xFF1A73E8)
             )
         )
-        // ⏮ ▶ ⏭ 居中，🔊 ⟳ ✕ 右对齐；按钮间留边距防误触
+        // ⏮ ▶ ⏭ 居中，🔊 ⟳（单格模式含 ✕）右对齐；按钮间留边距防误触
         Row(verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
             SmallButton("⏮") { onSwitchVideo(-1) }
@@ -507,8 +514,10 @@ private fun Controls(
             SmallButton(if (tile.volume > 0.01f) "🔊" else "🔇") { showVolumePanel = !showVolumePanel }
             Spacer(Modifier.padding(8.dp))
             SmallButton("⟳") { onRotate() }
-            Spacer(Modifier.padding(8.dp))
-            SmallButton("✕", Color(0xFFFF8888)) { onClose() }
+            if (showClose) {
+                Spacer(Modifier.padding(8.dp))
+                SmallButton("✕", Color(0xFFFF8888)) { onClose() }
+            }
         }
     }
 }
@@ -542,6 +551,7 @@ private fun CompactControls(
     player: ExoPlayer,
     dragging: Boolean,
     dragPosition: Float,
+    showClose: Boolean,
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
@@ -605,7 +615,7 @@ private fun CompactControls(
                 color = Color.White
             )
         }
-        // 6 个按钮 + 最小边距，保证 190px 宽的窄格子也放得下
+        // 5~6 个按钮 + 最小边距，保证 190px 宽的窄格子也放得下
         Row(verticalAlignment = Alignment.CenterVertically) {
             SmallButton("⏮", dense = true) { onSwitchVideo(-1) }
             Spacer(Modifier.padding(3.dp))
@@ -620,8 +630,10 @@ private fun CompactControls(
             }
             Spacer(Modifier.padding(3.dp))
             SmallButton("⟳", dense = true) { onRotate() }
-            Spacer(Modifier.padding(3.dp))
-            SmallButton("✕", Color(0xFFFF8888), dense = true) { onClose() }
+            if (showClose) {
+                Spacer(Modifier.padding(3.dp))
+                SmallButton("✕", Color(0xFFFF8888), dense = true) { onClose() }
+            }
         }
     }
 }
